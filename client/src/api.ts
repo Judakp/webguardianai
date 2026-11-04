@@ -1,5 +1,8 @@
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+
 export async function getHealth(): Promise<{ status: string }> {
-  const res = await fetch("/api/health");
+  const res = await fetch(`${API_BASE_URL}/api/health`);
   if (!res.ok) throw new Error(`health check failed: ${res.status}`);
   return (await res.json()) as { status: string };
 }
@@ -76,25 +79,36 @@ interface AnalyzeResponseBody {
   code?: string;
 }
 
-export async function analyzeSite(url: string, options: AnalyzeOptions = {}): Promise<Report> {
+export async function analyzeSite(
+  url: string,
+  options: AnalyzeOptions = {}
+): Promise<Report> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_ANALYZE_TIMEOUT_MS;
   const controller = new AbortController();
   let timedOut = false;
+
   const onExternalAbort = (): void => {
     controller.abort(options.signal?.reason);
   };
+
   if (options.signal) {
-    if (options.signal.aborted) controller.abort(options.signal.reason);
-    else options.signal.addEventListener("abort", onExternalAbort, { once: true });
+    if (options.signal.aborted) {
+      controller.abort(options.signal.reason);
+    } else {
+      options.signal.addEventListener("abort", onExternalAbort, { once: true });
+    }
   }
+
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort(new DOMException("analysis timed out", "TimeoutError"));
   }, timeoutMs);
+
   try {
     let res: Response;
+
     try {
-      res = await fetch("/api/online/analyze", {
+      res = await fetch(`${API_BASE_URL}/api/online/analyze`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url }),
@@ -109,26 +123,42 @@ export async function analyzeSite(url: string, options: AnalyzeOptions = {}): Pr
             "fetch-timeout"
           );
         }
+
         if (options.signal?.aborted) {
           throw new AnalyzeError("Analysis cancelled.", 499, "cancelled");
         }
+
         throw new AnalyzeError("Analysis was aborted.", 499, "cancelled");
       }
+
       throw new AnalyzeError(
-        err instanceof Error ? `Cannot reach the analysis server: ${err.message}` : "Cannot reach the analysis server.",
+        err instanceof Error
+          ? `Cannot reach the analysis server: ${err.message}`
+          : "Cannot reach the analysis server.",
         0,
         "network-error"
       );
     }
+
     let body: AnalyzeResponseBody;
+
     try {
       body = (await res.json()) as AnalyzeResponseBody;
     } catch {
-      throw new AnalyzeError(`Analysis failed: unexpected server response (${res.status}).`, res.status);
+      throw new AnalyzeError(
+        `Analysis failed: unexpected server response (${res.status}).`,
+        res.status
+      );
     }
+
     if (!res.ok || !body.ok || !body.report) {
-      throw new AnalyzeError(body.error ?? `analysis failed: ${res.status}`, res.status, body.code);
+      throw new AnalyzeError(
+        body.error ?? `analysis failed: ${res.status}`,
+        res.status,
+        body.code
+      );
     }
+
     return body.report;
   } finally {
     clearTimeout(timer);
