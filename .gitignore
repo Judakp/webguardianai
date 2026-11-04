@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+tmp/
+temp/
+uploads/
+.npm-cache/
+playwright-report/
+test-results/
+playwright/.auth/
+.DS_Store
+Thumbs.db
