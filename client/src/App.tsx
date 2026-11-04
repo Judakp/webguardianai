@@ -307,7 +307,7 @@ export default function App() {
           <h2 id="analyze-heading">Analyze a website</h2>
           <p className="wg-lead">
             Enter any public URL. WebGuardian fetches the page and runs static checks across security headers,
-            SEO, performance, accessibility, and best practices — then explains every finding with evidence and
+            SEO, performance, accessibility, and best practices; then explains every finding with evidence and
             a recommended fix.
           </p>
           <ul className="wg-feature-list">
