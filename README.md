@@ -2,57 +2,229 @@
 
 **Inspect. Understand. Fix. Verify.**
 
-WebGuardian AI is an online web quality-assurance agent. It securely fetches a public website, extracts HTML/HTTP evidence, runs deterministic checks, optionally inspects the rendered page in an isolated Playwright Chromium session, and — when `MODEL_API_KEY` is configured — asks Meta's Muse Spark for additional evidence-grounded reasoning.
+**An AI-powered web quality assurance agent that helps developers detect, understand, and investigate website issues through deterministic analysis, browser inspection, and Meta Muse Spark.**
+
+## The Problem
+
+Website quality assurance often requires developers to combine several tools to identify security weaknesses, technical errors, SEO issues, and rendering problems.
+
+Some issues are visible only after a page has been rendered in a browser, while others can be detected directly from HTTP responses and HTML content. Understanding these findings and deciding what to fix can also take time.
+
+AI-powered analysis can help explain technical issues, but recommendations need reliable evidence to remain useful.
+
+## Our Solution
+
+WebGuardian AI brings these capabilities together in one analysis workflow.
+
+It securely inspects a public website, collects technical evidence, runs deterministic quality checks, optionally examines the rendered page using Playwright, and uses Meta's Muse Spark 1.3 to provide additional evidence-grounded reasoning.
+
+Rather than relying entirely on AI, WebGuardian AI combines deterministic checks with AI-assisted interpretation. This allows developers to investigate website issues while retaining access to the technical evidence behind the report.
 
 ## Current MVP
 
-- **Online Site is the primary demo.** The Offline Project backend remains in the repository but is intentionally hidden from the web UI while the hackathon MVP is focused on online analysis.
-- Secure `http://` / `https://` URL validation.
-- SSRF protection for private, loopback, link-local, metadata, CGNAT, multicast, reserved and other non-public IPv4/IPv6 destinations.
-- Every redirect hop is revalidated.
-- Connections use validated-IP pinning so the production fetcher does not perform a second DNS lookup at connect time.
-- TLS still authenticates the original hostname.
-- Static HTML inspection never executes page scripts; the optional Playwright phase runs the public page in an isolated headless Chromium browser.
-- 2 MiB response-body cap, 15 s body-idle timeout, 10 s per-hop fetch timeout, 10 s DNS timeout and 120 s overall analysis budget.
-- Deterministic checks for transport, security headers, cookies, forms, mixed content, SEO, headings, links, images and common quality signals.
-- **Playwright + Chromium** browser inspection for runtime console errors, failed resources, empty rendered documents, and horizontal overflow.
-- Optional **Muse Spark 1.3** reasoning through Meta Model API, using backend-only `MODEL_API_KEY` credentials and structured JSON output.
-- Website content is treated as untrusted data; the AI prompt explicitly prevents page text from becoming instructions.
-- AI failure does not destroy the deterministic report: the UI falls back honestly and reports why AI was unavailable.
+The **Online Site** is the primary hackathon demonstration.
 
+The Offline Project backend remains in the repository, but its functionality is intentionally hidden from the web interface while the MVP focuses on online website analysis.
 
-## Playwright browser inspection
+### Key Features
 
-Playwright is a separate browser automation layer; it does not call Muse Spark. It executes the public page in headless Chromium, collects bounded technical observations, and passes those structured findings to the existing deterministic/Muse Spark report pipeline.
+- **Secure website inspection:** Accepts public HTTP and HTTPS URLs with strict URL and destination validation.
+- **Security analysis:** Checks HTTP security headers, cookies, forms, mixed content, and other common security signals.
+- **SEO and quality checks:** Inspects page titles, headings, links, images, and other HTML quality indicators.
+- **Deterministic analysis:** Uses predefined checks to identify technical issues without depending on an AI model.
+- **Browser inspection:** Uses isolated Playwright Chromium sessions to identify runtime console errors, failed resources, empty rendered documents, and horizontal overflow.
+- **AI-assisted reasoning:** Uses Meta Muse Spark 1.3 to provide additional explanations and recommendations based on collected evidence.
+- **Resilient reporting:** If Muse Spark or browser inspection is unavailable, the deterministic report remains available and the application reports the limitation.
+
+## How It Works
+
+WebGuardian AI follows a multi-stage analysis process.
+
+### 1. Secure URL validation
+
+The submitted URL is validated before any request is made.
+
+The server checks DNS resolution and blocks private, loopback, link-local, metadata, CGNAT, multicast, reserved, and other non-public IPv4 and IPv6 destinations.
+
+Every redirect is validated again. Connections use validated-IP pinning to prevent a second DNS lookup at connection time, while TLS continues to authenticate the original hostname.
+
+### 2. Static HTML inspection
+
+The server fetches the public page and extracts technical evidence without executing its JavaScript.
+
+The deterministic engine checks transport, security headers, cookies, forms, mixed content, SEO, headings, links, images, and other quality signals.
+
+### 3. Browser inspection with Playwright
+
+When enabled, Playwright launches an isolated headless Chromium session to inspect the rendered page.
+
+This separate browser layer can detect issues that are not necessarily visible in static HTML, including:
+
+- JavaScript console errors.
+- Failed network resources.
+- Empty rendered documents.
+- Horizontal overflow.
+
+Browser inspection is optional and best-effort. If Chromium cannot launch or the browser phase fails, the static HTML report remains available.
+
+### 4. AI-assisted reasoning with Meta Muse Spark
+
+When `MODEL_API_KEY` is configured, the backend sends structured technical evidence to Meta Muse Spark 1.3.
+
+Muse Spark provides additional reasoning and recommendations based on the collected findings.
+
+The AI layer does not replace the deterministic engine. Website content is treated as untrusted data, and the prompt explicitly prevents page content from becoming instructions.
+
+AI findings are additional reasoning signals. Developers can still inspect the underlying deterministic evidence to verify recommendations.
+
+## Why Meta Muse Spark?
+
+Muse Spark adds an interpretation layer to the technical analysis.
+
+The deterministic engine identifies issues through predefined checks, while Playwright contributes observations from the rendered page. Muse Spark then helps interpret the collected evidence and provide additional recommendations.
+
+This combination is designed to make technical findings easier to understand without making the application entirely dependent on AI-generated answers.
+
+The integration uses Meta's Model API with backend-only credentials and structured JSON output.
+
+### Muse Spark Integration
+
+The current implementation uses:
+
+- **Base URL:** `https://api.meta.ai/v1`
+- **Model:** `muse-spark-1.3`
+- **Authentication:** Bearer authentication using `MODEL_API_KEY`
+- **API:** OpenAI-compatible Chat Completions and Responses APIs
+- **Structured output:** Chat Completions `response_format`
+
+WebGuardian AI uses Node.js native `fetch` rather than introducing another SDK dependency.
+
+The API key is read exclusively on the backend. It is never exposed to the React client.
+
+If the key is missing or the AI request fails, WebGuardian AI continues with its deterministic analysis and clearly reports that AI reasoning is unavailable.
+
+## Technical Architecture
+
+```text
+                  Browser / React UI
+                         |
+                         v
+                POST /api/online/analyze
+                         |
+                         v
+                Secure URL validation
+                         |
+                         v
+             DNS validation + IP pinning
+                         |
+                         v
+                  Static HTML fetch
+                         |
+                +--------+--------+
+                |                 |
+                v                 v
+         Deterministic checks   Playwright
+                |               Chromium
+                |                 |
+                |                 v
+                |          Browser findings
+                |                 |
+                +--------+--------+
+                         |
+                         v
+                Structured evidence
+                         |
+                         v
+                   Muse Spark 1.3
+                         |
+                         v
+                   Final report
+```
+
+### Technology Stack
+
+- **Frontend:** React, TypeScript, Vite.
+- **Backend:** Node.js.
+- **Browser automation:** Playwright and Chromium.
+- **AI model:** Meta Muse Spark 1.3.
+- **Communication:** HTTP API and structured JSON.
+- **Networking:** Native Node.js fetch with validated-IP transport.
+
+## Security and Network Safety
+
+Security is an important part of WebGuardian AI's architecture.
+
+The online analyzer implements several safeguards:
+
+- Blocks private, loopback, link-local, metadata, CGNAT, multicast, reserved, and other non-public IP destinations.
+- Revalidates every redirect hop.
+- Pins connections to validated IP addresses.
+- Preserves TLS hostname authentication.
+- Caps response-body size.
+- Applies DNS, connection, body-idle, and overall analysis timeouts.
+- Prevents static HTML inspection from executing page scripts.
+- Treats website content as untrusted input for AI reasoning.
+
+### Playwright Network Isolation
+
+Chromium's direct hostname resolution is disabled.
+
+HTTP and HTTPS browser requests are intercepted and fetched by the Node.js server through the same DNS validation and pinned-IP transport used by the static analyzer.
+
+Redirects are revalidated, non-GET/HEAD methods are blocked, and service workers and downloads are disabled.
+
+This is defense in depth, not a replacement for production network restrictions. A network-restricted container or host egress policy is recommended as an additional production boundary.
+
+## Playwright Browser Inspection
+
+Playwright is a separate browser automation layer. It does not call Muse Spark.
 
 Install the browser after installing project dependencies:
 
-```powershell
+```bash
 npm install
 npx playwright install chromium
 ```
 
-Set `PLAYWRIGHT_ENABLED=true` in the server environment to enable browser inspection. Set it to `false` to use the HTML-only analyzer. Browser inspection is best-effort: if Chromium is unavailable or the browser phase fails, the HTML report is still returned.
+Enable browser inspection using the server environment variable:
 
-**Network safety:** Chromium's direct hostname resolution is disabled. Every HTTP(S) browser request is intercepted and fetched by the Node server through the same DNS validation and pinned-IP transport used by the static analyzer. Redirects are revalidated, non-GET/HEAD methods are blocked, service workers and downloads are disabled, and request/response sizes are capped. This is defense in depth, not a substitute for running the server in a restricted container or egress-controlled environment in production.
+```powershell
+$env:PLAYWRIGHT_ENABLED="true"
+```
 
-The browser phase is intentionally limited in this MVP: it does not submit forms, click arbitrary controls, log in, or crawl multiple pages. It tests the initial page at a desktop viewport. Each HTTP(S) request is fetched by the server through DNS validation and pinned-IP transport; Chromium's direct DNS is disabled. Use a network-restricted container or host egress policy as an additional production boundary. Browser inspection is optional and best-effort; if Chromium cannot launch, the static HTML report remains available.
+To disable it temporarily:
 
-## Muse Spark integration
+```powershell
+$env:PLAYWRIGHT_ENABLED="false"
+```
 
-The current official Meta Model API documentation specifies:
+Browser inspection is limited to the initial page at a desktop viewport. It does not submit forms, click arbitrary controls, log in, or crawl multiple pages.
 
-- Base URL: `https://api.meta.ai/v1`
-- Model: `muse-spark-1.3`
-- Bearer authentication using `MODEL_API_KEY`
-- OpenAI-compatible Chat Completions and Responses APIs
-- Structured output through `response_format` for Chat Completions
+## Getting Started Locally
 
-WebGuardian uses the native Node.js `fetch` API rather than adding another SDK dependency. The key is read only on the backend. The `.env.example` file contains only a placeholder; copy the values into your PowerShell session or create a local `.env` for your own workflow (the server does not load `.env` automatically). Never include a real key in a shared ZIP.
+### Requirements
 
-**Muse Spark diagnostics:** the server logs request size, model, HTTP status and elapsed time, but never logs the API key or the submitted evidence. The Muse Spark request timeout is 60 seconds. If a request times out, compare the last `[WebGuardian][Muse Spark]` log entry to determine whether the server received an HTTP response.
+- Node.js and npm.
+- Git.
+- A Meta Model API key for Muse Spark reasoning (optional).
+- Chromium installed through Playwright for browser inspection (optional).
 
-Set the environment variables in the PowerShell terminal used to start the API (the server does not automatically load `.env` files):
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Judakp/webguardianai.git
+cd webguardianai
+```
+
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+### 3. Configure environment variables
+
+Set the variables in the PowerShell terminal used to start the API:
 
 ```powershell
 $env:PLAYWRIGHT_ENABLED="true"
@@ -60,73 +232,43 @@ $env:MODEL_API_KEY="your_meta_model_api_key"
 $env:META_MODEL="muse-spark-1.3"
 ```
 
-If you do not have a Meta API key yet, omit `MODEL_API_KEY`; the static and browser checks still work. To disable Chromium inspection temporarily, set `$env:PLAYWRIGHT_ENABLED="false"`.
+The server does not automatically load `.env` files.
 
-Do **not** put the key in the React client, source code, README, ZIP, Git repository, or screenshots.
+If you do not have a Meta API key, omit `MODEL_API_KEY`. Static analysis and browser inspection can still work.
 
-If `MODEL_API_KEY` is missing, WebGuardian still runs its HTML and (when enabled) Playwright checks and clearly reports `aiAvailable: false`.
+**Never put a real API key in the React client, source code, README, Git repository, screenshots, or shared ZIP files.**
 
-## Architecture
+### 4. Start the API server
 
-```text
-Browser / React UI
-        |
-        v
-POST /api/online/analyze
-        |
-        v
-Secure public URL validation
-        |
-        v
-DNS validation + IP pinning + redirect validation
-        |
-        v
-HTML fetch (static, no JS execution)
-        |
-        +----------------------+
-        |                      |
-        v                      v
-Deterministic checks    Playwright / Chromium
-        |                      |
-        |                      v
-        |               Browser findings
-        |                      |
-        +----------+-----------+
-                   |
-                   v
-          Structured evidence
-                   |
-                   v
-             Muse Spark 1.3
-                   |
-                   +
-                   v
-              Final report
-```
+Open a PowerShell terminal:
 
-## Launch locally
-
-Install dependencies once on your Windows machine:
-
-```powershell
-npm install
-```
-
-API terminal:
-
-```powershell
+```bash
 npm run dev:server
 ```
 
-The API listens on `http://localhost:3001`.
+The API listens on:
 
-UI terminal:
+```text
+http://localhost:3001
+```
 
-```powershell
+### 5. Start the frontend
+
+Open a second terminal:
+
+```bash
 npm run dev:client
 ```
 
-The Vite UI listens on `http://localhost:5173` and proxies `/api` to the backend.
+The Vite interface listens on:
+
+```text
+http://localhost:5173
+```
+
+The frontend proxies `/api` requests to the backend.
+
+### 6. Check the API
 
 Health check:
 
@@ -140,34 +282,51 @@ Version:
 Invoke-RestMethod http://localhost:3001/api/version
 ```
 
-## Verification
+## Verification and Tests
 
-```powershell
+Run the project's verification commands from the repository root:
+
+```bash
 npm run typecheck
 npm run build
 npm run test
 ```
 
-The full test suite includes the offline security tests and can take longer than the online unit tests because it deliberately exercises archive limits and decompression-bomb protections.
+The full test suite includes offline security tests and can take longer than online unit tests because it deliberately exercises archive limits and decompression-bomb protections.
 
-## Important limitations
+## Current Limitations
 
-- One page per analysis plus up to five redirects. There is no site-wide crawler or sitemap crawl.
-- Browser rendering is limited to the initial page at a desktop viewport; no multi-page crawl, login, or arbitrary form submission is performed.
-- Broken-link verification is not enabled by default because the MVP avoids extra outbound requests beyond the inspected page.
-- The AI layer reasons only over extracted evidence, not the complete raw HTML source.
-- AI findings are additional reasoning signals; the deterministic evidence remains visible and should be used to verify recommendations.
-- Offline Project remains backend-only for now and is not part of the primary hackathon demo.
+WebGuardian AI is an MVP, and its current scope is intentionally limited.
 
-## Repository hygiene
+- One page is analyzed per request, with up to five redirects.
+- There is no site-wide crawler or sitemap crawl.
+- Browser rendering is limited to the initial page at a desktop viewport.
+- No login, arbitrary form submission, or automated interaction with page controls is performed.
+- Broken-link verification is not enabled by default because the MVP avoids additional outbound requests beyond the inspected page.
+- The AI layer reasons over extracted evidence rather than the complete raw HTML source.
+- AI findings are additional reasoning signals and should be verified against the deterministic evidence.
+- The Offline Project remains backend-only and is not part of the primary hackathon demonstration.
+
+## Repository Hygiene
 
 Do not commit or submit:
 
 - `node_modules/`
 - `.npm-cache/`
 - `.env`
-- API keys or other credentials
-- temporary test archives such as `big.zip` / `big.bin`
-- generated temporary directories
+- API keys or other credentials.
+- Temporary test archives such as `big.zip` and `big.bin`.
+- Generated temporary directories.
 
 The source ZIP for a final submission should contain the application source and lockfile, not local dependency caches.
+
+## Project
+
+**WebGuardian AI — Inspect. Understand. Fix. Verify.**
+
+Built for the Meta Global AI Developer Hackathon 2026.
+
+**Repository:** https://github.com/Judakp/webguardianai
+
+**Live Demo:** To be added after deployment.
+
